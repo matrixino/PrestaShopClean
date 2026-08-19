@@ -92,8 +92,9 @@ jobs:
 
       - name: Rename ZIP file
         run: |
-          cp prestashop_${{ env.GH_TAG }}.zip ${{ env.ZIP_FILE }}
-          cp prestashop_${{ env.GH_TAG }}.xml ${{ env.XML_FILE }}
+          SRC_VERSION="${{ env.GH_TAG }}"
+          cp prestashop_${SRC_VERSION%%-*}.zip ${{ env.ZIP_FILE }}
+          cp prestashop_${SRC_VERSION%%-*}.xml ${{ env.XML_FILE }}
         working-directory: ${{ env.RELEASE_DIR }}
 
       - name: release
