@@ -46,6 +46,8 @@ services:
     resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Sell/Discount/*"
   PrestaShopBundle\Form\Admin\Sell\Product\:
     resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Sell/Product/*"
+  PrestaShopBundle\Form\Admin\Sell\BusinessEntity\:
+    resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Sell/BusinessEntity/*"
   PrestaShopBundle\Form\Admin\Type\:
     resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Type/*"
   PrestaShopBundle\Form\Admin\AdvancedParameters\:
@@ -54,6 +56,9 @@ services:
     resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Catalog/Category/*"
   PrestaShopBundle\Form\Admin\Configure\AdvancedParameters\:
     resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Configure/AdvancedParameters/*"
+    # The Placement card type needs the Admin API endpoint catalog, which only exists in the
+    # admin kernel — it is registered in app/config/admin/services.yml instead.
+    exclude: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Configure/AdvancedParameters/ExtraPropertyDefinition/ExtraPropertyDefinitionAdvancedType.php"
   PrestaShopBundle\Form\Admin\Improve\International\Localization\:
     resource: "%kernel.project_dir%/src/PrestaShopBundle/Form/Admin/Improve/International/Localization/*"
   PrestaShopBundle\Form\Admin\Improve\International\Locations\:
@@ -133,6 +138,7 @@ services:
     arguments:
       $localizationPackChoices: '@=service("prestashop.core.form.choice_provider.localization_pack_by_iso_code").getChoices()'
 
+  PrestaShopBundle\Form\Admin\Dashboard\DashboardDateRangeType:
   PrestaShopBundle\Form\Admin\Improve\International\Localization\LocalUnitsType:
   PrestaShopBundle\Form\Admin\Improve\International\Localization\AdvancedConfigurationType:
   PrestaShopBundle\Form\Admin\Improve\International\Geolocation\GeolocationByIpAddressType:
@@ -551,6 +557,8 @@ services:
   PrestaShopBundle\Form\Admin\Sell\Product\Combination\CombinationFormType:
     arguments:
       $combinationListener: '@PrestaShopBundle\Form\Admin\Sell\Product\EventListener\CombinationListener'
+      $configuration: '@prestashop.adapter.legacy.configuration'
+      $featureFlagStateChecker: '@PrestaShop\PrestaShop\Core\FeatureFlag\FeatureFlagStateCheckerInterface'
 
   PrestaShopBundle\Form\Admin\Sell\Product\Combination\CombinationPriceImpactType:
     arguments:
@@ -633,6 +641,8 @@ services:
       $permissionChoices: '@=service("prestashop.core.form.choice_provider.permissions_choice_provider").getChoices()'
 
   PrestaShopBundle\Form\Admin\Improve\International\Tax\TaxRulesGroupType:
+
+  PrestaShopBundle\Form\Admin\Improve\International\Tax\TaxRulesType:
 
   PrestaShopBundle\Form\Admin\Improve\International\Tax\TaxRuleType:
     arguments:
@@ -734,3 +744,13 @@ services:
   PrestaShopBundle\Form\Admin\Configure\ShopParameters\Tag\TagType:
     arguments:
       $languagesChoices: '@=service("prestashop.core.form.choice_provider.all_languages").getChoices()'
+
+  PrestaShopBundle\Form\Admin\Sell\BusinessEntity\BusinessEntityAddressType:
+    arguments:
+      $stateChoiceProvider: '@prestashop.adapter.form.choice_provider.country_state_by_id'
+
+  PrestaShopBundle\Form\Admin\Configure\AdvancedParameters\ExtraPropertyDefinition\ExtraPropertyDefinitionFieldDefinitionType:
+    arguments:
+      $typeChoiceProvider: '@PrestaShop\PrestaShop\Core\Form\ChoiceProvider\ExtraPropertyTypeChoiceProvider'
+      $scopeChoiceProvider: '@PrestaShop\PrestaShop\Core\Form\ChoiceProvider\ExtraPropertyScopeChoiceProvider'
+      $sqlIndexChoiceProvider: '@PrestaShop\PrestaShop\Core\Form\ChoiceProvider\ExtraPropertySqlIndexChoiceProvider'

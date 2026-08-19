@@ -72,3 +72,11 @@ trans('Enable / Disable the new pricing system. This feature introduces an impro
 // Quick access feature flag
 trans('Quick access', 'Admin.Advparameters.Feature');
 trans('Enable / Disable the migrated quick access page.', 'Admin.Advparameters.Help');
+
+// Stats feature flag
+trans('Stats', 'Admin.Advparameters.Feature');
+trans('Enable / Disable the migrated stats page.', 'Admin.Advparameters.Help');
+
+// Dashboard feature flag
+trans('Dashboard', 'Admin.Advparameters.Feature');
+trans('Enable / Disable the migrated Symfony dashboard page. Native dashboard modules are not yet compatible with the new page and will not display until they are migrated.', 'Admin.Advparameters.Help');

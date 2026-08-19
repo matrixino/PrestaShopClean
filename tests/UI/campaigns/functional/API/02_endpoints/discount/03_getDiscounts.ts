@@ -10,6 +10,7 @@ import {
   boFeatureFlagPage,
   boLoginPage,
   type BrowserContext,
+  dataDiscountTypes,
   FakerDiscount,
   type Page,
   utilsAPI,
@@ -52,8 +53,9 @@ describe('API : GET /admin-api/discounts', async () => {
     await utilsPlaywright.closeBrowserContext(browserContext);
   });
 
-  // Pre-condition: Enable discount
+  // Pre-condition: Enable discount + experimental endpoints
   setFeatureFlag(boFeatureFlagPage.featureFlagDiscount, true, `${baseContext}_preTest`);
+  setFeatureFlag(boFeatureFlagPage.featureFlagExperimentalEndpoints, true, `${baseContext}_preTest2`);
 
   describe('API : Fetch the access token', async () => {
     it('should request the endpoint /access_token', async function () {
@@ -186,9 +188,10 @@ describe('API : GET /admin-api/discounts', async () => {
         const discountId = parseInt((await boDiscountsPage.getTextColumn(page, 'id_discount', 1)).toString(), 10);
         expect(discountId).to.equal(jsonResponse.items[idxItem].discountId);
 
-        // @todo : https://github.com/PrestaShop/PrestaShop/issues/41110
-        //const type = await boDiscountsPage.getTextColumn(page, 'type', 1);
-        //expect(type).to.equal(jsonResponse.items[idxItem].type);
+        const type = await boDiscountsPage.getTextColumn(page, 'discount_type', 1);
+        expect(type).to.equal(
+          dataDiscountTypes[jsonResponse.items[idxItem].type as keyof typeof dataDiscountTypes],
+        );
 
         const name = await boDiscountsPage.getTextColumn(page, 'name', 1);
         expect(name).to.equal(jsonResponse.items[idxItem].name);
@@ -241,6 +244,7 @@ describe('API : GET /admin-api/discounts', async () => {
     });
   });
 
-  // Post-condition: Disable discount
-  setFeatureFlag(boFeatureFlagPage.featureFlagDiscount, false, `${baseContext}_postTest`);
+  // Post-condition: Disable discount + experimental endpoints
+  setFeatureFlag(boFeatureFlagPage.featureFlagExperimentalEndpoints, false, `${baseContext}_postTest`);
+  setFeatureFlag(boFeatureFlagPage.featureFlagDiscount, false, `${baseContext}_postTest2`);
 });

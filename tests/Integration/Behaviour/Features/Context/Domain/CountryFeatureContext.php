@@ -10,6 +10,7 @@ namespace Tests\Integration\Behaviour\Features\Context\Domain;
 use Behat\Gherkin\Node\TableNode;
 use PHPUnit\Framework\Assert;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\AddCountryCommand;
+use PrestaShop\PrestaShop\Core\Domain\Country\Command\BulkDeleteCountriesCommand;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\BulkToggleCountriesStatusCommand;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\BulkUpdateCountryZoneCommand;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\DeleteCountryCommand;
@@ -19,6 +20,7 @@ use PrestaShop\PrestaShop\Core\Domain\Country\Exception\BulkCountryException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\CountryConstraintException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\CountryException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\CountryNotFoundException;
+use PrestaShop\PrestaShop\Core\Domain\Country\Exception\DuplicateCountryIsoCodeException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\InvalidAddressFormatException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Query\GetCountryForEditing;
 use PrestaShop\PrestaShop\Core\Domain\Country\QueryResult\CountryForEditing;
@@ -71,6 +73,14 @@ class CountryFeatureContext extends AbstractDomainFeatureContext
     public function assertCountryIdIsInvalid(): void
     {
         $this->assertLastErrorIs(CountryConstraintException::class, CountryConstraintException::INVALID_ID);
+    }
+
+    /**
+     * @Then I should get error that call prefix is invalid
+     */
+    public function assertCallPrefixIsInvalid(): void
+    {
+        $this->assertLastErrorIs(CountryConstraintException::class, CountryConstraintException::INVALID_CALL_PREFIX);
     }
 
     /**
@@ -133,57 +143,57 @@ class CountryFeatureContext extends AbstractDomainFeatureContext
     {
         $data = $this->localizeByRows($table);
 
-        $command = new EditCountryCommand(SharedStorage::getStorage()->get($countryReference));
-
-        if (isset($data['name'])) {
-            $command->setLocalizedNames($data['name']);
-        }
-
-        if (isset($data['iso_code'])) {
-            $command->setIsoCode($data['iso_code']);
-        }
-
-        if (isset($data['call_prefix'])) {
-            $command->setCallPrefix((int) $data['call_prefix']);
-        }
-
-        if (isset($data['default_currency'])) {
-            $command->setDefaultCurrency((int) $data['default_currency']);
-        }
-
-        if (isset($data['zone'])) {
-            $command->setZoneId((int) $data['zone']);
-        }
-
-        if (isset($data['need_zip_code'])) {
-            $command->setNeedZipCode(PrimitiveUtils::castStringBooleanIntoBoolean($data['need_zip_code']));
-        }
-
-        if (isset($data['zip_code_format'])) {
-            $command->setZipCodeFormat($data['zip_code_format']);
-        }
-
-        if (isset($data['address_format'])) {
-            $command->setAddressFormat($this->unescapeFormat($data['address_format']));
-        }
-
-        if (isset($data['is_enabled'])) {
-            $command->setEnabled(PrimitiveUtils::castStringBooleanIntoBoolean($data['is_enabled']));
-        }
-
-        if (isset($data['contains_states'])) {
-            $command->setContainsStates(PrimitiveUtils::castStringBooleanIntoBoolean($data['contains_states']));
-        }
-
-        if (isset($data['need_identification_number'])) {
-            $command->setNeedIdNumber(PrimitiveUtils::castStringBooleanIntoBoolean($data['need_identification_number']));
-        }
-
-        if (isset($data['display_tax_label'])) {
-            $command->setDisplayTaxLabel(PrimitiveUtils::castStringBooleanIntoBoolean($data['display_tax_label']));
-        }
-
         try {
+            $command = new EditCountryCommand(SharedStorage::getStorage()->get($countryReference));
+
+            if (isset($data['name'])) {
+                $command->setLocalizedNames($data['name']);
+            }
+
+            if (isset($data['iso_code'])) {
+                $command->setIsoCode($data['iso_code']);
+            }
+
+            if (isset($data['call_prefix'])) {
+                $command->setCallPrefix((int) $data['call_prefix']);
+            }
+
+            if (isset($data['default_currency'])) {
+                $command->setDefaultCurrency((int) $data['default_currency']);
+            }
+
+            if (isset($data['zone'])) {
+                $command->setZoneId((int) $data['zone']);
+            }
+
+            if (isset($data['need_zip_code'])) {
+                $command->setNeedZipCode(PrimitiveUtils::castStringBooleanIntoBoolean($data['need_zip_code']));
+            }
+
+            if (isset($data['zip_code_format'])) {
+                $command->setZipCodeFormat($data['zip_code_format']);
+            }
+
+            if (isset($data['address_format'])) {
+                $command->setAddressFormat($this->unescapeFormat($data['address_format']));
+            }
+
+            if (isset($data['is_enabled'])) {
+                $command->setEnabled(PrimitiveUtils::castStringBooleanIntoBoolean($data['is_enabled']));
+            }
+
+            if (isset($data['contains_states'])) {
+                $command->setContainsStates(PrimitiveUtils::castStringBooleanIntoBoolean($data['contains_states']));
+            }
+
+            if (isset($data['need_identification_number'])) {
+                $command->setNeedIdNumber(PrimitiveUtils::castStringBooleanIntoBoolean($data['need_identification_number']));
+            }
+
+            if (isset($data['display_tax_label'])) {
+                $command->setDisplayTaxLabel(PrimitiveUtils::castStringBooleanIntoBoolean($data['display_tax_label']));
+            }
+
             $this->getCommandBus()->handle($command);
         } catch (CountryException $e) {
             $this->setLastException($e);
@@ -197,6 +207,7 @@ class CountryFeatureContext extends AbstractDomainFeatureContext
     {
         $map = [
             'InvalidAddressFormat' => InvalidAddressFormatException::class,
+            'DuplicateCountryIsoCode' => DuplicateCountryIsoCodeException::class,
         ];
 
         if (!isset($map[$exceptionShortName])) {
@@ -250,6 +261,32 @@ class CountryFeatureContext extends AbstractDomainFeatureContext
     {
         try {
             $this->getCommandBus()->handle(new BulkToggleCountriesStatusCommand(true, []));
+        } catch (CountryException $e) {
+            $this->setLastException($e);
+        }
+    }
+
+    /**
+     * @When I bulk delete countries :countryReferences
+     */
+    public function bulkDeleteCountries(string $countryReferences): void
+    {
+        try {
+            $this->getCommandBus()->handle(new BulkDeleteCountriesCommand(
+                $this->getCountryIdsFromReferences($countryReferences)
+            ));
+        } catch (CountryException $e) {
+            $this->setLastException($e);
+        }
+    }
+
+    /**
+     * @When I bulk delete an empty list of countries
+     */
+    public function bulkDeleteEmptyCountriesList(): void
+    {
+        try {
+            $this->getCommandBus()->handle(new BulkDeleteCountriesCommand([]));
         } catch (CountryException $e) {
             $this->setLastException($e);
         }

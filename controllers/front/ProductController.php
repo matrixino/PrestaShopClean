@@ -66,8 +66,13 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
 
     public function canonicalRedirection(string $canonical_url = ''): void
     {
-        // This is there to prevent error, because this function is also called
-        // in parent front controller before we have even loaded our data.
+        /*
+         * This is there to prevent error, because this function is also called
+         * in parent front controller before we have even loaded our data.
+         *
+         * There can also be a scenario where this page is accessed for a non-existing product ID,
+         * in this case, we need to always validate everything, because we can't "die early".
+         */
         if (!Validate::isLoadedObject($this->product)) {
             return;
         }
@@ -98,13 +103,15 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
      */
     public function getCanonicalURL(): string
     {
-        $product = $this->context->smarty->getTemplateVars('product');
-
-        if (!($product instanceof ProductLazyArray)) {
+        /*
+         * There can be a scenario where this page is accessed for a non-existing product ID,
+         * in this case, we need to always validate everything, because we can't "die early".
+         */
+        if (!Validate::isLoadedObject($this->product)) {
             return '';
         }
 
-        return $product->getCanonicalUrl();
+        return $this->getTemplateVarProduct()->getCanonicalUrl();
     }
 
     /**
@@ -140,7 +147,9 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
         }
 
         // Otherwise immediately show 404
+        // Watch out - the controller goes on, always validate $this->product.
         if (!Validate::isLoadedObject($this->product)) {
+            Hook::exec('actionNotFound');
             $this->product = null;
             header('HTTP/1.1 404 Not Found');
             header('Status: 404 Not Found');
@@ -307,7 +316,11 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
      */
     public function initContent(): void
     {
-        if ($this->product === null) {
+        /*
+         * There can be a scenario where this page is accessed for a non-existing product ID,
+         * in this case, we need to always validate everything, because we can't "die early".
+         */
+        if (!Validate::isLoadedObject($this->product)) {
             parent::initContent();
 
             return;
@@ -436,6 +449,10 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
 
     public function displayAjaxQuickview(): void
     {
+        /*
+         * Since this call is made on already a valid product page, we can safely assume that
+         * the product is valid and loaded, so we can use getTemplateVarProduct() without any checks.
+         */
         $productForTemplate = $this->getTemplateVarProduct();
         ob_end_clean();
         header('Content-Type: application/json');
@@ -450,6 +467,10 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
 
     public function displayAjaxRefresh(): void
     {
+        /*
+         * Since this call is made on already a valid product page, we can safely assume that
+         * the product is valid and loaded, so we can use getTemplateVarProduct() without any checks.
+         */
         $product = $this->getTemplateVarProduct();
 
         // After refresh, we will show the customer a new quantity he has to use
@@ -871,7 +892,7 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
             );
 
             // These two variables are deprecated are kept just for backward compatibility and will be removed in v10
-            $manufacturerImageUrl = $productManufacturer['image']['small']['url'];
+            $manufacturerImageUrl = $productManufacturer['image']['small']['url'] ?? null;
             $productBrandUrl = $productManufacturer['url'];
         }
 
@@ -1024,9 +1045,9 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
     }
 
     /**
-     * @return Product
+     * @return Product|null
      */
-    public function getProduct(): Product
+    public function getProduct(): ?Product
     {
         return $this->product;
     }
@@ -1421,7 +1442,7 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
     {
         $breadcrumb = parent::getBreadcrumbLinks();
 
-        if ($this->product === null) {
+        if (!Validate::isLoadedObject($this->product)) {
             return $breadcrumb;
         }
 
@@ -1454,7 +1475,7 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
 
         $breadcrumb['links'][] = [
             'title' => $this->product->name,
-            'url' => $this->context->link->getProductLink($this->product, null, null, null, null, null, (int) $this->getIdProductAttributeByRequest()),
+            'url' => $this->getCanonicalURL(),
         ];
 
         return $breadcrumb;
@@ -1462,12 +1483,21 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
 
     /**
      * Generates structured data for the current product, extending the default ones.
+     * If you want to enrich or modify this from a module, for example - add reviews, use hook actionFrontControllerSetVariables.
      *
      * @return array Enriched structured data for the product page
      */
     public function getStructuredData(): array
     {
         $structuredData = parent::getStructuredData();
+
+        /*
+         * There can be a scenario where this page is accessed for a non-existing product ID,
+         * in this case, we need to always validate everything, because we can't "die early".
+         */
+        if (!Validate::isLoadedObject($this->product)) {
+            return $structuredData;
+        }
 
         $product = $this->getTemplateVarProduct();
 
@@ -1476,7 +1506,8 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
             '@context' => 'https://schema.org',
             '@type' => 'Product',
             'name' => $product['name'],
-            'description' => preg_replace("/[\r\n]+/", ' ', $product['meta']['description'] ?? ''),
+            'url' => $this->getCanonicalURL(),
+            'description' => $product['description_short_text'],
             'category' => $product['category_name'] ?? '',
         ];
 
@@ -1524,7 +1555,7 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
         if (!empty((float) $product['weight'])) {
             $structuredData['product']['weight'] = [
                 '@type' => 'QuantitativeValue',
-                'value' => $product['weight'],
+                'value' => number_format($product['weight'], $this->context->getComputingPrecision(), '.', ''),
                 'unitCode' => $product['weight_unit'],
             ];
         }
@@ -1534,7 +1565,8 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
             $structuredData['product']['offers'] = [
                 '@type' => 'Offer',
                 'priceCurrency' => $this->context->currency->iso_code,
-                'price' => $product['price_amount'],
+                // We are using number format to avoid float encoding issues in the final JSON
+                'price' => number_format($product['price_amount'], $this->context->getComputingPrecision(), '.', ''),
                 'name' => $product['name'],
                 'url' => $this->getCanonicalURL(),
                 'priceValidUntil' => date('Y-m-d', strtotime('+15 day')),
@@ -1545,6 +1577,12 @@ class ProductControllerCore extends ProductPresentingFrontControllerCore
                 ],
             ];
 
+            // Add item condition if available
+            if (!empty($product['show_condition']) && !empty($product['condition']['schema_url'])) {
+                $structuredData['product']['offers']['itemCondition'] = $product['condition']['schema_url'];
+            }
+
+            // Add codes if available
             if (!empty($product['reference'])) {
                 $structuredData['product']['offers']['sku'] = $product['reference'];
             }

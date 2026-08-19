@@ -467,6 +467,7 @@ default:
         - Tests\Integration\Behaviour\Features\Context\Configuration\EmailConfigurationFeatureContext
         - Tests\Integration\Behaviour\Features\Context\CountryFeatureContext
         - Tests\Integration\Behaviour\Features\Context\CustomerFeatureContext
+        - Tests\Integration\Behaviour\Features\Context\Domain\ApiClientManagementFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\AttributeGroupFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\CartFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\OrderFeatureContext
@@ -586,6 +587,7 @@ default:
         - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\SearchCombinationFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\SearchProductCombinationFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\UpdateCombinationFeatureContext
+        - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\UpdateCombinationFeatureValuesFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\UpdateCombinationImagesFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\UpdateCombinationStockFeatureContext
         - Tests\Integration\Behaviour\Features\Context\Domain\Product\Combination\UpdateCombinationSuppliersFeatureContext
@@ -661,6 +663,12 @@ default:
         - Tests\Integration\Behaviour\Features\Context\Domain\AliasFeatureContext
         - Tests\Integration\Behaviour\Features\Context\CommonFeatureContext
         - Tests\Integration\Behaviour\Features\Transform\StringToBoolTransformContext
+    extra-property-definition:
+      paths:
+        - "%paths.base%/Features/Scenario/ExtraProperty"
+      contexts:
+        - Tests\Integration\Behaviour\Features\Context\Domain\ExtraPropertyDefinitionFeatureContext
+        - Tests\Integration\Behaviour\Features\Context\CommonFeatureContext
     api-client:
       paths:
         - "%paths.base%/Features/Scenario/ApiClient"
@@ -792,3 +800,9 @@ default:
         - Tests\Integration\Behaviour\Features\Context\LanguageFeatureContext
         - Tests\Integration\Behaviour\Features\Transform\LocalizedArrayTransformContext
         - Tests\Integration\Behaviour\Features\Transform\StringToBoolTransformContext
+    business_entity:
+      paths:
+        - "%paths.base%/Features/Scenario/BusinessEntity"
+      contexts:
+        - Tests\Integration\Behaviour\Features\Context\CommonFeatureContext
+        - Tests\Integration\Behaviour\Features\Context\Domain\BusinessEntityFeatureContext

@@ -177,6 +177,7 @@ services:
       - '@prestashop.adapter.data_provider.customer'
       - '@prestashop.adapter.order.query_handler.get_order_products_for_viewing_handler'
       - '@prestashop.adapter.legacy.configuration'
+      - '@PrestaShopBundle\Entity\Repository\ShipmentRepository'
       - '@prestashop.adapter.address.formatter'
 
   prestashop.adapter.order.query_handler.get_order_products_for_viewing_handler:
@@ -187,6 +188,7 @@ services:
       - '@=service("prestashop.adapter.legacy.context").getContext().language.id'
       - "@prestashop.core.localization.locale.context_locale"
       - '@PrestaShopBundle\Entity\Repository\ShipmentRepository'
+      - '@PrestaShop\PrestaShop\Adapter\Module\ModuleHtmlAuthorizationChecker'
 
   prestashop.adapter.order.command_handler.resend_order_email_handler:
     class: PrestaShop\PrestaShop\Adapter\Order\CommandHandler\ResendOrderEmailHandler

@@ -398,6 +398,9 @@ class ProductCore extends ObjectModel
     protected static $_frontFeaturesCache = [];
 
     /** @var array */
+    protected static $_frontFeaturesCombinationCache = [];
+
+    /** @var array */
     protected static $productPropertiesCache = [];
 
     /** @var int|null */
@@ -1212,6 +1215,7 @@ class ProductCore extends ObjectModel
         static::$productPropertiesCache = [];
         static::$_cacheFeatures = [];
         static::$_frontFeaturesCache = [];
+        static::$_frontFeaturesCombinationCache = [];
         static::$_prices = [];
         static::$_pricesLevel2 = [];
         static::$_incat = [];
@@ -5691,7 +5695,7 @@ class ProductCore extends ObjectModel
         ]);
 
         // Always recompute unit prices based on initial ratio so that discounts are applied on unit price as well
-        $unitPriceRatio = self::computeUnitPriceRatio($row, $id_product_attribute, $quantityToUseForPriceCalculations, $context);
+        $unitPriceRatio = self::computeUnitPriceRatio($row, $id_product_attribute, $context);
         $row['unit_price_ratio'] = $unitPriceRatio;
         $row['unit_price_tax_excluded'] = $unitPriceRatio != 0 ? $priceTaxExcluded / $unitPriceRatio : 0.0;
         $row['unit_price_tax_included'] = $unitPriceRatio != 0 ? $priceTaxIncluded / $unitPriceRatio : 0.0;
@@ -5708,61 +5712,49 @@ class ProductCore extends ObjectModel
     }
 
     /**
-     * Compute unit price ratio based on the saved unit price, we make sure that quantities, currency rates and
-     * combination impact are taken into account.
+     * Compute unit price ratio based on the saved prices on both product and combinations.
      *
      * @param array $productRow
      * @param int $combinationId
-     * @param int $quantity
      * @param Context $context
      *
      * @return float
      */
-    private static function computeUnitPriceRatio(array $productRow, int $combinationId, int $quantity, Context $context): float
+    private static function computeUnitPriceRatio(array $productRow, int $combinationId, Context $context): float
     {
+        // If we have a combination Id, we will prepare it
+        if ($combinationId) {
+            $combination = new Combination($combinationId);
+        }
+
+        // First, we get the unit price without tax saved in the database
         $baseUnitPrice = 0.0;
         if (isset($productRow['unit_price'])) {
-            // Unit price is supposed to be in DB and accessible in the row
             $baseUnitPrice = (float) $productRow['unit_price'];
         }
 
-        // Then if combination has an impact we apply it on unit price
+        // Then, if combination has an impact we apply it on unit price
         if ($combinationId) {
-            $combination = new Combination($combinationId);
             $baseUnitPrice = $baseUnitPrice + $combination->unit_price_impact;
         }
 
+        // If there is none, nothing to calculate
         if ($baseUnitPrice == 0) {
             return 0;
         }
 
-        // Finally, we apply the currency rate
-        $defaultCurrencyId = Currency::getDefaultCurrencyId();
-        $currencyId = Validate::isLoadedObject($context->currency) ? (int) $context->currency->id : $defaultCurrencyId;
-        if ($currencyId !== $defaultCurrencyId) {
-            $baseUnitPrice = Tools::convertPrice($baseUnitPrice, $currencyId);
+        // Now, we get a basic price of this product, with no discounts, exactly as in the backoffice.
+        // We are not using new Product because that "breaks" the price attribute in the constructor.
+        $baseProductPrice = (float) Db::getInstance()->getValue('
+            SELECT price
+            FROM ' . _DB_PREFIX_ . 'product_shop
+            WHERE id_product = ' . (int) $productRow['id_product'] . ' AND id_shop = ' . (int) $context->shop->id
+        );
+        if ($combinationId) {
+            $baseProductPrice = $baseProductPrice + $combination->price;
         }
 
-        // Compute price ratio based on initial product price and initial unit price (without taxes, group discount, cart rules)
-        $noSpecificPrice = null;
-        $baseProductPrice = Product::getPriceStatic(
-            (int) $productRow['id_product'],
-            false,
-            $combinationId,
-            6,
-            null,
-            false,
-            false,
-            $quantity,
-            false,
-            null,
-            null,
-            null,
-            $noSpecificPrice,
-            true,
-            false
-        );
-
+        // And we calculate the precise ratio
         return $baseProductPrice / $baseUnitPrice;
     }
 
@@ -5816,14 +5808,22 @@ class ProductCore extends ObjectModel
     }
 
     /**
-     * Select all features for a given language
+     * Select all features for a given language.
+     *
+     * When $id_product_attribute is provided and the "combination_feature_values" feature flag is
+     * enabled, the feature values defined at combination level are merged over the product ones:
+     * if a feature is defined both at product and combination level, the combination values take
+     * precedence. This keeps the historical signature backward compatible (modules calling it with
+     * only the product id still get the product features) while letting callers that know the
+     * displayed combination benefit from the new behavior.
      *
      * @param int $id_lang Language identifier
      * @param int $id_product Product identifier
+     * @param int $id_product_attribute Combination identifier (0 to ignore combination features)
      *
      * @return array Array with feature's data
      */
-    public static function getFrontFeaturesStatic($id_lang, $id_product)
+    public static function getFrontFeaturesStatic($id_lang, $id_product, $id_product_attribute = 0)
     {
         if (!Feature::isFeatureActive()) {
             return [];
@@ -5849,7 +5849,16 @@ class ProductCore extends ObjectModel
             );
         }
 
-        return self::$_frontFeaturesCache[$id_product . '-' . $id_lang];
+        $productFeatures = self::$_frontFeaturesCache[$id_product . '-' . $id_lang];
+
+        if (!(int) $id_product_attribute || !self::isCombinationFeatureValuesEnabled()) {
+            return $productFeatures;
+        }
+
+        return self::mergeFrontFeatures(
+            $productFeatures,
+            self::getFrontFeaturesCombinationStatic((int) $id_lang, (int) $id_product_attribute)
+        );
     }
 
     /**
@@ -5860,6 +5869,86 @@ class ProductCore extends ObjectModel
     public function getFrontFeatures($id_lang)
     {
         return Product::getFrontFeaturesStatic($id_lang, $this->id);
+    }
+
+    /**
+     * Returns the feature values associated to a given combination (product_attribute).
+     *
+     * @param int $id_lang Language identifier
+     * @param int $id_product_attribute Combination identifier
+     *
+     * @return array Array with feature's data
+     */
+    protected static function getFrontFeaturesCombinationStatic(int $id_lang, int $id_product_attribute): array
+    {
+        if (!Feature::isFeatureActive() || !$id_product_attribute) {
+            return [];
+        }
+        $cacheKey = (int) $id_product_attribute . '-' . (int) $id_lang;
+        if (!array_key_exists($cacheKey, self::$_frontFeaturesCombinationCache)) {
+            if (Configuration::get('PS_FEATURE_VALUES_ORDER') === 'name') {
+                $secondaryOrder = 'fvl.value';
+            } else {
+                $secondaryOrder = 'fv.position';
+            }
+
+            self::$_frontFeaturesCombinationCache[$cacheKey] = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
+                '
+                SELECT name, value, fpa.id_feature, f.position, fvl.id_feature_value
+                FROM ' . _DB_PREFIX_ . 'feature_product_attribute fpa
+                LEFT JOIN ' . _DB_PREFIX_ . 'feature_lang fl ON (fl.id_feature = fpa.id_feature AND fl.id_lang = ' . (int) $id_lang . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'feature_value fv ON (fv.id_feature_value = fpa.id_feature_value)
+                LEFT JOIN ' . _DB_PREFIX_ . 'feature_value_lang fvl ON (fvl.id_feature_value = fpa.id_feature_value AND fvl.id_lang = ' . (int) $id_lang . ')
+                LEFT JOIN ' . _DB_PREFIX_ . 'feature f ON (f.id_feature = fpa.id_feature AND fl.id_lang = ' . (int) $id_lang . ')
+                ' . Shop::addSqlAssociation('feature', 'f') . '
+                WHERE fpa.id_product_attribute = ' . (int) $id_product_attribute . '
+                ORDER BY f.position ASC, ' . $secondaryOrder . ' ASC'
+            );
+        }
+
+        return self::$_frontFeaturesCombinationCache[$cacheKey];
+    }
+
+    /**
+     * Merges two lists of front features (as returned by getFrontFeaturesStatic /
+     * getFrontFeaturesCombinationStatic). When a feature is present in both lists (same id_feature),
+     * the combination values take precedence and the product values for that feature are dropped;
+     * features present in only one list are kept. The result is ordered by feature position.
+     *
+     * @param array $productFeatures
+     * @param array $combinationFeatures
+     *
+     * @return array
+     */
+    protected static function mergeFrontFeatures(array $productFeatures, array $combinationFeatures): array
+    {
+        if (empty($combinationFeatures)) {
+            return $productFeatures;
+        }
+
+        // Collect the features overridden by the combination
+        $overriddenFeatureIds = [];
+        foreach ($combinationFeatures as $combinationFeature) {
+            $overriddenFeatureIds[(int) $combinationFeature['id_feature']] = true;
+        }
+
+        // Keep product features that are not overridden, then append combination features
+        $mergedFeatures = [];
+        foreach ($productFeatures as $productFeature) {
+            if (!isset($overriddenFeatureIds[(int) $productFeature['id_feature']])) {
+                $mergedFeatures[] = $productFeature;
+            }
+        }
+        foreach ($combinationFeatures as $combinationFeature) {
+            $mergedFeatures[] = $combinationFeature;
+        }
+
+        // Preserve the position-based ordering used by the front office
+        usort($mergedFeatures, function ($a, $b) {
+            return (int) $a['position'] <=> (int) $b['position'];
+        });
+
+        return $mergedFeatures;
     }
 
     /**
@@ -8199,6 +8288,13 @@ class ProductCore extends ObjectModel
         $manager = self::getFeatureFlagManager();
 
         return $manager !== null && $manager->isEnabled(FeatureFlagSettings::FEATURE_FLAG_NEW_PRICING);
+    }
+
+    protected static function isCombinationFeatureValuesEnabled(): bool
+    {
+        $manager = self::getFeatureFlagManager();
+
+        return $manager !== null && $manager->isEnabled(FeatureFlagSettings::FEATURE_FLAG_COMBINATION_FEATURE_VALUES);
     }
 
     protected static function getFeatureFlagManager(): ?FeatureFlagStateCheckerInterface

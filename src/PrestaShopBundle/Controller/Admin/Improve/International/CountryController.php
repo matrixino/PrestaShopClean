@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace PrestaShopBundle\Controller\Admin\Improve\International;
 
 use Exception;
+use PrestaShop\PrestaShop\Core\Domain\Country\Command\BulkDeleteCountriesCommand;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\BulkToggleCountriesStatusCommand;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\BulkUpdateCountryZoneCommand;
 use PrestaShop\PrestaShop\Core\Domain\Country\Command\DeleteCountryCommand;
@@ -20,6 +21,7 @@ use PrestaShop\PrestaShop\Core\Domain\Country\Exception\CountryConstraintExcepti
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\CountryException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\CountryNotFoundException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Exception\DeleteCountryException;
+use PrestaShop\PrestaShop\Core\Domain\Country\Exception\DuplicateCountryIsoCodeException;
 use PrestaShop\PrestaShop\Core\Domain\Country\Query\GetCountryForEditing;
 use PrestaShop\PrestaShop\Core\Domain\Country\QueryResult\CountryForEditing;
 use PrestaShop\PrestaShop\Core\Domain\Zone\Exception\ZoneException;
@@ -34,7 +36,6 @@ use PrestaShopBundle\Form\Admin\Improve\International\Locations\ChangeCountriesZ
 use PrestaShopBundle\Security\Attribute\AdminSecurity;
 use PrestaShopBundle\Security\Attribute\DemoRestricted;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -208,26 +209,19 @@ class CountryController extends PrestaShopAdminController
 
     #[DemoRestricted(redirectRoute: 'admin_countries_index')]
     #[AdminSecurity("is_granted('update', request.get('_legacy_controller'))", redirectRoute: 'admin_countries_index')]
-    public function toggleStatusAction(int $countryId): JsonResponse
+    public function toggleStatusAction(int $countryId): RedirectResponse
     {
         try {
             $this->dispatchCommand(new ToggleCountryStatusCommand($countryId));
-            $response = [
-                'status' => true,
-                'message' => $this->trans(
-                    'The status has been successfully updated.',
-                    [],
-                    'Admin.Notifications.Success'
-                ),
-            ];
+            $this->addFlash(
+                'success',
+                $this->trans('The status has been successfully updated.', [], 'Admin.Notifications.Success')
+            );
         } catch (CountryException $e) {
-            $response = [
-                'status' => false,
-                'message' => $this->getErrorMessageForException($e, $this->getErrorMessages($e)),
-            ];
+            $this->addFlash('error', $this->getErrorMessageForException($e, $this->getErrorMessages($e)));
         }
 
-        return $this->json($response);
+        return $this->redirectToRoute('admin_countries_index');
     }
 
     #[DemoRestricted(redirectRoute: 'admin_countries_index')]
@@ -293,6 +287,33 @@ class CountryController extends PrestaShopAdminController
     }
 
     /**
+     * Deletes countries in bulk action
+     *
+     * @param Request $request
+     *
+     * @return RedirectResponse
+     */
+    #[DemoRestricted(redirectRoute: 'admin_countries_index')]
+    #[AdminSecurity("is_granted('delete', request.get('_legacy_controller'))", redirectRoute: 'admin_countries_index')]
+    public function bulkDeleteAction(Request $request): RedirectResponse
+    {
+        $countryIds = $this->getBulkCountriesFromRequest($request);
+
+        try {
+            $this->dispatchCommand(new BulkDeleteCountriesCommand($countryIds));
+
+            $this->addFlash(
+                'success',
+                $this->trans('The selection has been successfully deleted.', [], 'Admin.Notifications.Success')
+            );
+        } catch (CountryException $e) {
+            $this->addFlash('error', $this->getErrorMessageForException($e, $this->getErrorMessages($e)));
+        }
+
+        return $this->redirectToRoute('admin_countries_index');
+    }
+
+    /**
      * @return array
      */
     protected function getCountryToolbarButtons(): array
@@ -324,6 +345,11 @@ class CountryController extends PrestaShopAdminController
                 ),
                 BulkCountryException::FAILED_BULK_UPDATE_ZONE => $this->trans(
                     'An error occurred when updating the zone for one or several countries.',
+                    [],
+                    'Admin.International.Feature'
+                ),
+                BulkCountryException::FAILED_BULK_DELETE => $this->trans(
+                    'An error occurred while deleting one or several countries.',
                     [],
                     'Admin.International.Feature'
                 ),
@@ -359,6 +385,11 @@ class CountryController extends PrestaShopAdminController
                 'Country contains invalid field values.',
                 [],
                 'Admin.International.Feature'
+            ),
+            DuplicateCountryIsoCodeException::class => $this->trans(
+                'This ISO code already exists. You cannot create two countries with the same ISO code.',
+                [],
+                'Admin.International.Notification'
             ),
             DeleteCountryException::class => $this->trans(
                 'Country cannot be deleted.',

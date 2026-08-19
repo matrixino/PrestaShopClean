@@ -59,4 +59,10 @@ services:
     autowire: true
     autoconfigure: true
 
+  PrestaShop\PrestaShop\Adapter\TaxRulesGroup\QueryHandler\GetTaxRuleListHandler:
+    autowire: true
+    autoconfigure: true
+    arguments:
+      $dbPrefix: '%database_prefix%'
+
   PrestaShop\PrestaShop\Adapter\TaxRulesGroup\Repository\TaxRuleRepository: ~

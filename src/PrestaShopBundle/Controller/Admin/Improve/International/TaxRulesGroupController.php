@@ -4,9 +4,12 @@
  * docs/licenses/LICENSE.txt file that was distributed with this source code.
  */
 
+declare(strict_types=1);
+
 namespace PrestaShopBundle\Controller\Admin\Improve\International;
 
 use Exception;
+use PrestaShop\PrestaShop\Core\Domain\TaxRule\TaxRuleSettings;
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\Command\BulkDeleteTaxRulesGroupCommand;
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\Command\BulkSetTaxRulesGroupStatusCommand;
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\Command\DeleteTaxRulesGroupCommand;
@@ -29,13 +32,14 @@ use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\Exception\CannotUpda
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\Exception\TaxRuleConstraintException;
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\Exception\TaxRuleNotFoundException;
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\Query\GetTaxRuleForEditing;
+use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\Query\GetTaxRuleList;
 use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\QueryResult\EditableTaxRule;
+use PrestaShop\PrestaShop\Core\Domain\TaxRulesGroup\TaxRule\QueryResult\TaxRuleList;
 use PrestaShop\PrestaShop\Core\Form\IdentifiableObject\Builder\FormBuilderInterface;
 use PrestaShop\PrestaShop\Core\Form\IdentifiableObject\Handler\FormHandlerInterface;
 use PrestaShop\PrestaShop\Core\Grid\Definition\Factory\GridDefinitionFactoryInterface;
 use PrestaShop\PrestaShop\Core\Grid\Definition\Factory\TaxRuleGridDefinitionFactory;
 use PrestaShop\PrestaShop\Core\Grid\GridFactoryInterface;
-use PrestaShop\PrestaShop\Core\Search\Filters\TaxRuleFilters;
 use PrestaShop\PrestaShop\Core\Search\Filters\TaxRulesGroupFilters;
 use PrestaShopBundle\Controller\Admin\PrestaShopAdminController;
 use PrestaShopBundle\Security\Attribute\AdminSecurity;
@@ -117,7 +121,6 @@ class TaxRulesGroupController extends PrestaShopAdminController
      *
      * @param Request $request
      * @param int $taxRulesGroupId
-     * @param TaxRuleFilters $filters
      *
      * @return Response
      */
@@ -125,18 +128,18 @@ class TaxRulesGroupController extends PrestaShopAdminController
     public function editAction(
         Request $request,
         int $taxRulesGroupId,
-        TaxRuleFilters $filters,
         #[Autowire(service: 'prestashop.core.form.identifiable_object.builder.tax_rules_group_form_builder')]
         FormBuilderInterface $formBuilder,
         #[Autowire(service: 'prestashop.core.form.identifiable_object.handler.tax_rules_group_form_handler')]
         FormHandlerInterface $formHandler,
-        #[Autowire(service: 'prestashop.core.grid.factory.tax_rule')]
-        GridFactoryInterface $taxRuleGridFactory
     ): Response {
         $taxRulesGroupForm = null;
 
         try {
-            $taxRulesGroupForm = $formBuilder->getFormFor((int) $taxRulesGroupId);
+            $taxRulesGroupForm = $formBuilder->getFormFor((int) $taxRulesGroupId, [], [
+                'show_tax_rules_list' => true,
+                'tax_rules_group_id' => $taxRulesGroupId,
+            ]);
             $taxRulesGroupForm->handleRequest($request);
             $result = $formHandler->handleFor((int) $taxRulesGroupId, $taxRulesGroupForm);
             if ($result->isSubmitted() && $result->isValid()) {
@@ -154,17 +157,11 @@ class TaxRulesGroupController extends PrestaShopAdminController
             $this->addFlash('error', $this->getErrorMessageForException($e, $this->getErrorMessages()));
         }
 
-        $filters->addFilter(['taxRulesGroupId' => $taxRulesGroupId]);
-        $taxRuleGrid = $taxRuleGridFactory->getGrid($filters);
-
         return $this->render('@PrestaShop/Admin/Improve/International/TaxRulesGroup/edit.html.twig', [
             'enableSidebar' => true,
             'layoutTitle' => $this->trans('Editing tax rule %value%', ['%value%' => $taxRulesGroupForm->getData()['name']], 'Admin.Navigation.Menu'),
             'taxRulesGroupForm' => $taxRulesGroupForm->createView(),
             'help_link' => $this->generateSidebarLink($request->attributes->get('_legacy_controller')),
-            'taxRuleGrid' => $this->presentGrid($taxRuleGrid),
-            'taxRulesGroupId' => $taxRulesGroupId,
-            'layoutHeaderToolbarBtn' => $this->getTaxRuleToolbarButtons($taxRulesGroupId),
         ]);
     }
 
@@ -195,6 +192,58 @@ class TaxRulesGroupController extends PrestaShopAdminController
             ->fetchAllAssociative();
 
         return new JsonResponse($states);
+    }
+
+    /**
+     * Returns paginated list of tax rules for a group as JSON.
+     *
+     * @param Request $request
+     * @param int $taxRulesGroupId
+     *
+     * @return JsonResponse
+     */
+    #[AdminSecurity("is_granted('read', request.get('_legacy_controller'))")]
+    public function listTaxRulesAction(Request $request, int $taxRulesGroupId): JsonResponse
+    {
+        $limit = $request->query->getInt('limit') ?: null;
+        $offset = $request->query->getInt('offset') ?: null;
+
+        /** @var TaxRuleList $taxRuleList */
+        $taxRuleList = $this->dispatchQuery(
+            new GetTaxRuleList(
+                $taxRulesGroupId,
+                $this->getLanguageContext()->getId(),
+                $limit,
+                $offset,
+            )
+        );
+
+        $taxRules = [];
+        foreach ($taxRuleList->getTaxRules() as $taxRule) {
+            $taxRules[] = [
+                'id' => $taxRule->getTaxRuleId(),
+                'countryName' => $taxRule->getCountryName(),
+                'stateName' => $taxRule->getStateName(),
+                'zipcode' => $taxRule->getZipcode(),
+                'behavior' => $this->formatBehavior($taxRule->getBehavior()),
+                'taxName' => $taxRule->getTaxName(),
+                'taxRate' => $taxRule->getTaxRate() . ' %',
+                'description' => $taxRule->getDescription(),
+                'editUrl' => $this->generateUrl('admin_tax_rules_edit', [
+                    'taxRulesGroupId' => $taxRulesGroupId,
+                    'taxRuleId' => $taxRule->getTaxRuleId(),
+                ]),
+                'deleteUrl' => $this->generateUrl('admin_tax_rules_delete', [
+                    'taxRulesGroupId' => $taxRulesGroupId,
+                    'taxRuleId' => $taxRule->getTaxRuleId(),
+                ]),
+            ];
+        }
+
+        return $this->json([
+            'taxRules' => $taxRules,
+            'total' => $taxRuleList->getTotalCount(),
+        ]);
     }
 
     /**
@@ -248,7 +297,10 @@ class TaxRulesGroupController extends PrestaShopAdminController
                 $this->addFlash('success', $this->trans('Successful creation', [], 'Admin.Notifications.Success'));
 
                 if ($isLiteDisplaying) {
-                    return new Response('<div data-modal-close="true"></div>');
+                    return $this->redirectToRoute('admin_tax_rules_create', [
+                        'taxRulesGroupId' => $taxRulesGroupId,
+                        'liteDisplaying' => 1,
+                    ]);
                 }
 
                 $newGroupId = $handlerResult->getIdentifiableObjectId();
@@ -302,7 +354,11 @@ class TaxRulesGroupController extends PrestaShopAdminController
                 $this->addFlash('success', $this->trans('Update successful', [], 'Admin.Notifications.Success'));
 
                 if ($isLiteDisplaying) {
-                    return new Response('<div data-modal-close="true"></div>');
+                    return $this->redirectToRoute('admin_tax_rules_edit', [
+                        'taxRulesGroupId' => $taxRulesGroupId,
+                        'taxRuleId' => $taxRuleId,
+                        'liteDisplaying' => 1,
+                    ]);
                 }
 
                 return $this->redirectToRoute('admin_tax_rules_groups_edit', [
@@ -334,21 +390,21 @@ class TaxRulesGroupController extends PrestaShopAdminController
      * @param int $taxRulesGroupId
      * @param int $taxRuleId
      *
-     * @return RedirectResponse
+     * @return JsonResponse
      */
     #[AdminSecurity("is_granted('delete', request.get('_legacy_controller'))", redirectRoute: 'admin_tax_rules_groups_index')]
-    public function deleteTaxRuleAction(int $taxRulesGroupId, int $taxRuleId): RedirectResponse
+    public function deleteTaxRuleAction(int $taxRulesGroupId, int $taxRuleId): JsonResponse
     {
         try {
             $this->dispatchCommand(new DeleteTaxRuleCommand($taxRuleId));
-            $this->addFlash('success', $this->trans('Successful deletion', [], 'Admin.Notifications.Success'));
         } catch (Exception $e) {
-            $this->addFlash('error', $this->getErrorMessageForException($e, $this->getErrorMessages()));
+            return $this->json(
+                ['error' => $this->getErrorMessageForException($e, $this->getErrorMessages())],
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
-        return $this->redirectToRoute('admin_tax_rules_groups_edit', [
-            'taxRulesGroupId' => $taxRulesGroupId,
-        ]);
+        return $this->json(['message' => $this->trans('Successful deletion', [], 'Admin.Notifications.Success')]);
     }
 
     /**
@@ -559,20 +615,13 @@ class TaxRulesGroupController extends PrestaShopAdminController
         ];
     }
 
-    /**
-     * @param int $taxRulesGroupId
-     *
-     * @return array
-     */
-    private function getTaxRuleToolbarButtons(int $taxRulesGroupId): array
+    private function formatBehavior(int $behavior): string
     {
-        return [
-            'add' => [
-                'href' => $this->generateUrl('admin_tax_rules_create', ['taxRulesGroupId' => $taxRulesGroupId]),
-                'desc' => $this->trans('Add new tax rule', [], 'Admin.International.Feature'),
-                'icon' => 'add_circle_outline',
-            ],
-        ];
+        return match ($behavior) {
+            TaxRuleSettings::BEHAVIOR_COMBINE => $this->trans('Combine', [], 'Admin.International.Feature'),
+            TaxRuleSettings::BEHAVIOR_ONE_AFTER_ANOTHER => $this->trans('One after another', [], 'Admin.International.Feature'),
+            default => $this->trans('This tax only', [], 'Admin.International.Feature'),
+        };
     }
 
     /**

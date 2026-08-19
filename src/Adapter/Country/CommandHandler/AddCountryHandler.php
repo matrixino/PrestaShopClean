@@ -51,7 +51,7 @@ class AddCountryHandler implements AddCountryHandlerInterface
 
         $country->name = $command->getLocalizedNames();
         $country->iso_code = $command->getIsoCode();
-        $country->call_prefix = $command->getCallPrefix();
+        $country->call_prefix = $command->getCallPrefix()->getValue();
         $country->need_zip_code = $command->needZipCode();
         $country->active = $command->isEnabled();
         $country->need_identification_number = $command->needIdNumber();

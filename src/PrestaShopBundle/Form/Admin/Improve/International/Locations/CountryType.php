@@ -17,8 +17,10 @@ use PrestaShopBundle\Form\Admin\Type\SwitchType;
 use PrestaShopBundle\Form\Admin\Type\TranslatableType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Validator\Constraints\GreaterThanOrEqual;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -88,9 +90,12 @@ class CountryType extends AbstractType
                     ]),
                 ],
             ])
-            ->add('call_prefix', TextType::class, [
+            ->add('call_prefix', IntegerType::class, [
                 'required' => true,
                 'label' => $this->translator->trans('Call prefix', [], 'Admin.International.Feature'),
+                'constraints' => [
+                    new GreaterThanOrEqual(0),
+                ],
             ])
             ->add('default_currency', CurrencyChoiceType::class, [
                 'required' => false,

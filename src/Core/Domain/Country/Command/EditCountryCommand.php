@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace PrestaShop\PrestaShop\Core\Domain\Country\Command;
 
+use PrestaShop\PrestaShop\Core\Domain\Country\ValueObject\CallPrefix;
 use PrestaShop\PrestaShop\Core\Domain\Country\ValueObject\CountryId;
 use PrestaShop\PrestaShop\Core\Domain\Country\ValueObject\CountryZipCodeFormat;
 
@@ -28,7 +29,7 @@ class EditCountryCommand
 
     private ?string $isoCode = null;
 
-    private ?int $callPrefix = null;
+    private ?CallPrefix $callPrefix = null;
 
     private ?int $defaultCurrency = null;
 
@@ -91,14 +92,14 @@ class EditCountryCommand
         return $this;
     }
 
-    public function getCallPrefix(): ?int
+    public function getCallPrefix(): ?CallPrefix
     {
         return $this->callPrefix;
     }
 
     public function setCallPrefix(int $callPrefix): EditCountryCommand
     {
-        $this->callPrefix = $callPrefix;
+        $this->callPrefix = new CallPrefix($callPrefix);
 
         return $this;
     }

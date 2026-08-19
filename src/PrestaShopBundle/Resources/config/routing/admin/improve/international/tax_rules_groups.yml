@@ -117,6 +117,17 @@ admin_tax_rules_search:
   requirements:
     taxRulesGroupId: \d+
 
+admin_tax_rules_list:
+  path: /{taxRulesGroupId}/tax-rules/list
+  methods: [ GET ]
+  defaults:
+    _controller: PrestaShopBundle\Controller\Admin\Improve\International\TaxRulesGroupController::listTaxRulesAction
+    _legacy_controller: AdminTaxRulesGroup
+    _legacy_link: AdminTaxRulesGroup
+    _legacy_feature_flag: tax_rules_group
+  requirements:
+    taxRulesGroupId: \d+
+
 admin_tax_rules_create:
   path: /{taxRulesGroupId}/tax-rules/new
   methods: [ GET, POST ]

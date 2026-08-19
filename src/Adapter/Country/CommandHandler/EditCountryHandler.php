@@ -46,7 +46,7 @@ class EditCountryHandler implements EditCountryHandlerInterface
         }
 
         if (null !== $command->getCallPrefix()) {
-            $country->call_prefix = $command->getCallPrefix();
+            $country->call_prefix = $command->getCallPrefix()->getValue();
         }
 
         if (null !== $command->needZipCode()) {

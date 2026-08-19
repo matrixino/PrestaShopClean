@@ -13,6 +13,8 @@ use PrestaShop\PrestaShop\Adapter\Module\Repository\ModuleRepository;
 use PrestaShop\PrestaShop\Adapter\ServiceLocator;
 use PrestaShop\PrestaShop\Core\Context\LegacyControllerContext;
 use PrestaShop\PrestaShop\Core\Exception\ContainerNotFoundException;
+use PrestaShop\PrestaShop\Core\ExtraProperty\Definition\ExtraPropertyDefinition;
+use PrestaShop\PrestaShop\Core\ExtraProperty\Definition\ExtraPropertyRegistryInterface;
 use PrestaShop\PrestaShop\Core\Foundation\Filesystem\FileSystem;
 use PrestaShop\PrestaShop\Core\Module\Legacy\ModuleInterface;
 use PrestaShop\PrestaShop\Core\Module\ModuleOverrideChecker;
@@ -1223,6 +1225,68 @@ abstract class ModuleCore implements ModuleInterface
     public function unregisterHook($hook_id, $shop_list = null)
     {
         return Hook::unregisterHook($this, $hook_id, $shop_list);
+    }
+
+    /**
+     * Register or update an extra property definition for an entity.
+     *
+     * The definition must have entityName and propertyName set.
+     * The module name is automatically filled in from $this->name when $definition->getModuleName() is null.
+     *
+     * About BO label translations: store wording/domain pairs in the definition, and also call
+     * $this->trans() in the module code so strings are discoverable by the BO translation UI.
+     *
+     * Every failure throws (there is no false return): wrap the call in
+     * catch (PrestaShop\PrestaShop\Core\ExtraProperty\Exception\ExtraPropertyException $e)
+     * in module install code to handle all failure reasons — the exception message carries
+     * the reason. A failed registration persists nothing (no definition row, no column).
+     *
+     * @param ExtraPropertyDefinition $definition definition
+     *
+     * @return bool always true — failures throw
+     *
+     * @throws PrestaShop\PrestaShop\Core\ExtraProperty\Exception\ExtraPropertyException on any failure: scope conflict, destructive schema change, invalid form options, missing base table, DDL or persistence failure (see the reason-code constants on ExtraPropertyRegistryException)
+     */
+    public function registerExtraProperty(ExtraPropertyDefinition $definition): bool
+    {
+        // Inject the calling module's name when the developer did not explicitly set it.
+        if (null === $definition->getModuleName() && !empty($this->name)) {
+            $definition = $definition->withModuleName($this->name);
+        }
+
+        /** @var ExtraPropertyRegistryInterface $entityCustomFieldRegistry */
+        $entityCustomFieldRegistry = $this->get(ExtraPropertyRegistryInterface::class);
+
+        $entityCustomFieldRegistry->register($definition);
+
+        return true;
+    }
+
+    /**
+     * Unregister an extra property definition from the registry table.
+     *
+     * Pass the same ExtraPropertyDefinition used when registering. The module name is injected
+     * automatically when $definition->getModuleName() is null, mirroring registerExtraProperty().
+     *
+     * @param ExtraPropertyDefinition $definition Definition identifying the property to unregister
+     * @param bool $dropData If true, also DROP the SQL column and its data from the *_extra table
+     *
+     * @return bool always true — failures throw (no-op when nothing is registered)
+     *
+     * @throws PrestaShop\PrestaShop\Core\ExtraProperty\Exception\ExtraPropertyException when deleting the definition row or dropping the column fails — catch it in module uninstall code
+     */
+    public function unregisterExtraProperty(ExtraPropertyDefinition $definition, bool $dropData = false): bool
+    {
+        if (null === $definition->getModuleName() && !empty($this->name)) {
+            $definition = $definition->withModuleName($this->name);
+        }
+
+        /** @var ExtraPropertyRegistryInterface $entityCustomFieldRegistry */
+        $entityCustomFieldRegistry = $this->get(ExtraPropertyRegistryInterface::class);
+
+        $entityCustomFieldRegistry->unregister($definition, $dropData);
+
+        return true;
     }
 
     /**
